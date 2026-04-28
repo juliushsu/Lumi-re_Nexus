@@ -19,12 +19,12 @@ Implemented RPCs:
 - `reject_cirqua_field_mapping`
 - `generate_project_evaluation_baseline_from_cirqua`
 
-Not implemented for direct frontend use:
+Implemented as service-only pipeline functions:
 
 - `mark_cirqua_import_snapshot_received`
 - `propose_cirqua_field_mappings`
 
-These remain backend/service-only contract items in this phase.
+These are implemented, but remain backend/service-only and are not intended for direct Readdy frontend invocation.
 
 ## Key implementation choices
 
@@ -140,22 +140,33 @@ This aligns the database constraint with the documented service contract, even t
 
 - any of the six CIRQUA raw tables
 
+## Current service-only behavior
+
+`mark_cirqua_import_snapshot_received`:
+
+- requires backend/service path or privileged super_admin execution path
+- inserts project and budget snapshots
+- moves run from `ready_to_import` to `imported`
+- writes `import_snapshot` audit event
+- does not touch `projects`
+
+`propose_cirqua_field_mappings`:
+
+- requires backend/service path or privileged super_admin execution path
+- reads imported snapshots
+- creates `pending_review` mapping rows only
+- moves run from `imported` to `mapping_required`
+- writes `propose_mapping` audit event
+
 ## Known limitations
 
 - no real CIRQUA API integration
-- no backend/service-only snapshot receive function implementation yet
-- no mapping proposal generator implementation yet
 - no dedicated baseline version table yet
 - no project-scoped analyst visibility model yet
 
 ## Recommended next step
 
-Next round should implement backend/service-only support for:
-
-- `mark_cirqua_import_snapshot_received`
-- `propose_cirqua_field_mappings`
-
-and optionally tighten the architecture further by:
+Next round should tighten the architecture further by:
 
 - exposing only RPC-driven write surfaces in documentation
 - reducing even admin direct table-writing expectations

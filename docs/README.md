@@ -26,6 +26,7 @@ This repository keeps collaboration-safe project documents under `docs/` so loca
 ## API
 
 - [`docs/api/cirqua-baseline-generation-contract-v1.md`](./api/cirqua-baseline-generation-contract-v1.md)
+- [`docs/api/cirqua-import-executable-pipeline-v1.md`](./api/cirqua-import-executable-pipeline-v1.md)
 - [`docs/api/cirqua-import-state-machine-v1.md`](./api/cirqua-import-state-machine-v1.md)
 - [`docs/api/cirqua-rpc-implementation-notes-v1.md`](./api/cirqua-rpc-implementation-notes-v1.md)
 - [`docs/api/cirqua-service-rpc-contract-v1.md`](./api/cirqua-service-rpc-contract-v1.md)
@@ -40,6 +41,7 @@ This repository keeps collaboration-safe project documents under `docs/` so loca
 - `supabase/migrations/20260428101500_sample_role_assignment_staging.sql`
 - `supabase/migrations/20260428113000_add_cirqua_import_mvp_tables.sql`
 - `supabase/migrations/20260428124500_implement_cirqua_import_rpc.sql`
+- `supabase/migrations/20260428133000_implement_cirqua_service_only_pipeline.sql`
 - `supabase/seed/20260428094500_roi_models_seed.sql`
 - `supabase/scripts/cirqua-import-mvp-smoke-test.sql`
 - `supabase/scripts/staging-rls-smoke-test.sql`

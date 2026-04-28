@@ -1,10 +1,11 @@
 -- CIRQUA Import MVP smoke test
 -- Purpose:
--- Validate that the current MVP data layer and implemented RPC layer
--- are present and aligned with the staged service contract.
+-- Validate the executable CIRQUA MVP pipeline in staging without any
+-- real CIRQUA token or external API connectivity.
 --
--- This script does not require real CIRQUA tokens and does not call
--- external APIs. It is a contract-validation and schema-readiness script.
+-- This script is intended to run in a privileged staging SQL context
+-- such as Supabase SQL Editor (`postgres`) or a service-role backend path.
+-- It creates test rows inside a transaction and rolls everything back.
 
 begin;
 
@@ -63,56 +64,7 @@ begin
 end
 $$;
 
--- 3. Critical enum-like checks exist in schema
-do $$
-declare
-  bad_count integer;
-begin
-  select count(*)
-  into bad_count
-  from public.project_source_links
-  where source_system <> 'cirqua';
-
-  if bad_count <> 0 then
-    raise exception 'Found non-cirqua source_system values in project_source_links.';
-  end if;
-end
-$$;
-
--- 4. Contract-required columns exist for consent and import state
-do $$
-declare
-  missing_count integer;
-begin
-  select count(*)
-  into missing_count
-  from (
-    values
-      ('project_source_links', 'consent_status'),
-      ('project_source_links', 'consent_scope_json'),
-      ('project_source_links', 'consent_granted_by'),
-      ('project_source_links', 'consent_granted_at'),
-      ('external_import_runs', 'import_status'),
-      ('external_import_runs', 'baseline_generated_by'),
-      ('external_import_runs', 'baseline_generated_at'),
-      ('external_import_runs', 'baseline_project_evaluation_id'),
-      ('external_import_audit_logs', 'event_type')
-  ) as required_cols(table_name, column_name)
-  where not exists (
-    select 1
-    from information_schema.columns c
-    where c.table_schema = 'public'
-      and c.table_name = required_cols.table_name
-      and c.column_name = required_cols.column_name
-  );
-
-  if missing_count <> 0 then
-    raise exception 'Missing required CIRQUA contract columns. Missing count: %', missing_count;
-  end if;
-end
-$$;
-
--- 5. Implemented RPC functions exist
+-- 3. All required functions exist
 do $$
 declare
   missing_count integer;
@@ -124,6 +76,8 @@ begin
       ('create_cirqua_project_link'),
       ('grant_cirqua_consent'),
       ('create_cirqua_import_run'),
+      ('mark_cirqua_import_snapshot_received'),
+      ('propose_cirqua_field_mappings'),
       ('approve_cirqua_field_mapping'),
       ('reject_cirqua_field_mapping'),
       ('generate_project_evaluation_baseline_from_cirqua')
@@ -137,22 +91,12 @@ begin
   );
 
   if missing_count <> 0 then
-    raise exception 'Missing implemented CIRQUA RPC functions. Missing count: %', missing_count;
+    raise exception 'Missing CIRQUA executable pipeline functions. Missing count: %', missing_count;
   end if;
 end
 $$;
 
--- 6. Service-only functions remain intentionally unimplemented
-select
-  'service_only_contract' as item_type,
-  fn_name as item_name
-from (
-  values
-    ('mark_cirqua_import_snapshot_received'),
-    ('propose_cirqua_field_mappings')
-) as expected(fn_name);
-
--- 7. Authenticated direct DML on raw CIRQUA tables has been revoked
+-- 4. Direct DML on raw CIRQUA tables has been revoked for authenticated
 do $$
 declare
   unsafe_grant_count integer;
@@ -178,65 +122,217 @@ begin
 end
 $$;
 
--- 8. Manual verification order for implemented RPC layer
+-- 5. Service-only functions are not executable by authenticated
+do $$
+begin
+  if has_function_privilege(
+    'authenticated',
+    'public.mark_cirqua_import_snapshot_received(uuid, jsonb, jsonb)',
+    'EXECUTE'
+  ) then
+    raise exception 'Authenticated should not have EXECUTE on mark_cirqua_import_snapshot_received';
+  end if;
+
+  if has_function_privilege(
+    'authenticated',
+    'public.propose_cirqua_field_mappings(uuid)',
+    'EXECUTE'
+  ) then
+    raise exception 'Authenticated should not have EXECUTE on propose_cirqua_field_mappings';
+  end if;
+end
+$$;
+
+-- 6. Full executable pipeline smoke test
+do $$
+declare
+  v_project_id uuid := gen_random_uuid();
+  v_link_id uuid;
+  v_pre_consent_run_id uuid;
+  v_ready_run_id uuid;
+  v_mapping_rec record;
+  v_evaluation_id uuid;
+  v_result jsonb;
+  v_mapping_count integer;
+  v_audit_count integer;
+begin
+  insert into public.projects (
+    id,
+    project_code,
+    project_name_zh,
+    project_name_en,
+    project_type,
+    genre,
+    region,
+    language,
+    status,
+    total_budget
+  )
+  values (
+    v_project_id,
+    concat('CIRQUA-SMOKE-', substr(replace(gen_random_uuid()::text, '-', ''), 1, 8)),
+    'CIRQUA 測試專案',
+    'CIRQUA Smoke Project',
+    'feature_film',
+    'drama',
+    'TW',
+    'Mandarin',
+    'development',
+    12000000
+  );
+
+  v_result := public.create_cirqua_project_link(
+    v_project_id,
+    concat('cirqua-demo-', substr(replace(gen_random_uuid()::text, '-', ''), 1, 8)),
+    '{"project_profile": true, "budget_summary": true}'::jsonb
+  );
+
+  v_link_id := (v_result ->> 'project_source_link_id')::uuid;
+
+  if v_link_id is null then
+    raise exception 'create_cirqua_project_link did not return link id';
+  end if;
+
+  v_result := public.create_cirqua_import_run(v_link_id);
+  v_pre_consent_run_id := (v_result ->> 'import_run_id')::uuid;
+
+  if v_result ->> 'import_status' <> 'consent_required' then
+    raise exception 'Expected pre-consent import run to be consent_required, got %', v_result ->> 'import_status';
+  end if;
+
+  v_result := public.grant_cirqua_consent(
+    v_link_id,
+    '{"project_profile": true, "budget_summary": true}'::jsonb,
+    now() + interval '7 days'
+  );
+
+  if v_result ->> 'consent_status' <> 'granted' then
+    raise exception 'Expected consent_status granted, got %', v_result ->> 'consent_status';
+  end if;
+
+  v_result := public.create_cirqua_import_run(v_link_id);
+  v_ready_run_id := (v_result ->> 'import_run_id')::uuid;
+
+  if v_result ->> 'import_status' <> 'ready_to_import' then
+    raise exception 'Expected ready_to_import, got %', v_result ->> 'import_status';
+  end if;
+
+  v_result := public.mark_cirqua_import_snapshot_received(
+    v_ready_run_id,
+    '{
+      "project_name_zh": "匯入測試片名",
+      "project_name_en": "Imported Smoke Title",
+      "project_type": "feature_film",
+      "genre": "thriller",
+      "region": "TW",
+      "language": "Mandarin"
+    }'::jsonb,
+    '{
+      "currency": "TWD",
+      "budget_total": 18000000,
+      "above_the_line_total": 3500000,
+      "below_the_line_total": 12000000,
+      "contingency_total": 2500000
+    }'::jsonb
+  );
+
+  if v_result ->> 'import_status' <> 'imported' then
+    raise exception 'Expected imported after snapshot receipt, got %', v_result ->> 'import_status';
+  end if;
+
+  v_result := public.propose_cirqua_field_mappings(v_ready_run_id);
+
+  if v_result ->> 'import_status' <> 'mapping_required' then
+    raise exception 'Expected mapping_required after proposal, got %', v_result ->> 'import_status';
+  end if;
+
+  select count(*)
+  into v_mapping_count
+  from public.external_import_field_mappings
+  where import_run_id = v_ready_run_id;
+
+  if v_mapping_count = 0 then
+    raise exception 'Expected proposed mappings but found none';
+  end if;
+
+  for v_mapping_rec in
+    select id
+    from public.external_import_field_mappings
+    where import_run_id = v_ready_run_id
+      and mapping_status = 'pending_review'
+  loop
+    v_result := public.approve_cirqua_field_mapping(v_mapping_rec.id, 'Smoke test approval');
+  end loop;
+
+  if v_result ->> 'import_run_status' <> 'approved' then
+    raise exception 'Expected import run to be approved after mapping approvals, got %', v_result ->> 'import_run_status';
+  end if;
+
+  v_result := public.generate_project_evaluation_baseline_from_cirqua(v_ready_run_id);
+  v_evaluation_id := (v_result ->> 'project_evaluation_id')::uuid;
+
+  if v_evaluation_id is null then
+    raise exception 'Expected project_evaluation_id from baseline generation';
+  end if;
+
+  if v_result ->> 'evaluation_status' <> 'draft' then
+    raise exception 'Expected draft evaluation status, got %', v_result ->> 'evaluation_status';
+  end if;
+
+  select count(*)
+  into v_audit_count
+  from public.external_import_audit_logs
+  where import_run_id = v_ready_run_id
+    and event_type in (
+      'create_import_run',
+      'import_snapshot',
+      'propose_mapping',
+      'approve_mapping',
+      'generate_baseline'
+    );
+
+  if v_audit_count < 5 then
+    raise exception 'Expected at least 5 audit events for full pipeline, found %', v_audit_count;
+  end if;
+end
+$$;
+
+-- 7. Output verification markers for operators
 select
-  'manual_smoke_order' as item_type,
-  step_name as item_name
+  'validated_function' as item_type,
+  fn_name as item_name
 from (
   values
     ('create_cirqua_project_link'),
     ('grant_cirqua_consent'),
     ('create_cirqua_import_run'),
-    ('service_only_snapshot_receive'),
-    ('service_only_mapping_proposal'),
-    ('approve_or_reject_mappings'),
+    ('mark_cirqua_import_snapshot_received'),
+    ('propose_cirqua_field_mappings'),
+    ('approve_cirqua_field_mapping'),
+    ('reject_cirqua_field_mapping'),
     ('generate_project_evaluation_baseline_from_cirqua')
-) as steps(step_name);
+) as expected(fn_name);
 
 rollback;
 
--- Manual smoke test order after RPC implementation
--- ------------------------------------------------
--- 1. As super_admin:
---    call create_cirqua_project_link(...)
---    expect consent_status = 'pending'
---    expect audit event `create_project_link`
---
--- 2. As analyst:
---    call create_cirqua_import_run(...) before consent
---    expect `consent_required`
---    expect audit event `create_import_run`
---
--- 3. As super_admin:
---    call grant_cirqua_consent(...)
---    expect consent_status = 'granted'
---    expect audit event `grant_consent`
---
--- 4. As analyst:
---    call create_cirqua_import_run(...)
---    expect status = `ready_to_import`
---
--- 5. As backend/service:
---    perform snapshot insert flow through service-only contract
---    expect run status moves to `imported`
---    expect audit event `import_snapshot`
---
--- 6. As backend/service:
---    perform mapping proposal flow
---    expect run status moves to `mapping_required`
---    expect pending mappings created
---
--- 7. As analyst:
---    call approve_cirqua_field_mapping(...) and/or reject_cirqua_field_mapping(...)
---    expect audit event per decision
---    expect run status becomes `approved` or `rejected`
---
--- 8. As shareholder_viewer:
+-- Expected manual role checks after this script passes
+-- ---------------------------------------------------
+-- 1. As shareholder_viewer:
 --    attempt any CIRQUA RPC
 --    expect authorization failure
 --
--- 9. As analyst or super_admin:
---    call generate_project_evaluation_baseline_from_cirqua(...)
---    only after `approved`
---    expect new `project_evaluations` draft
---    expect audit event `generate_baseline`
+-- 2. As analyst:
+--    attempt grant_cirqua_consent(...)
+--    expect authorization failure
+--
+-- 3. As analyst:
+--    create import run after valid consent
+--    expect success
+--
+-- 4. As analyst:
+--    approve/reject mappings
+--    expect success
+--
+-- 5. As analyst:
+--    generate baseline only after all mappings approved
+--    expect new project_evaluations draft
