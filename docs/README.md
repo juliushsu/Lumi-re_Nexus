@@ -16,6 +16,7 @@ This repository keeps collaboration-safe project documents under `docs/` so loca
 - [`docs/security/rls-smoke-test-checklist-v1.md`](./security/rls-smoke-test-checklist-v1.md)
 - [`docs/security/cirqua-data-consent-and-access-control-v1.md`](./security/cirqua-data-consent-and-access-control-v1.md)
 - [`docs/security/cirqua-rls-policy-v1.md`](./security/cirqua-rls-policy-v1.md)
+- [`docs/security/cirqua-service-permission-matrix-v1.md`](./security/cirqua-service-permission-matrix-v1.md)
 
 ## Data
 
@@ -24,7 +25,9 @@ This repository keeps collaboration-safe project documents under `docs/` so loca
 
 ## API
 
+- [`docs/api/cirqua-baseline-generation-contract-v1.md`](./api/cirqua-baseline-generation-contract-v1.md)
 - [`docs/api/cirqua-import-state-machine-v1.md`](./api/cirqua-import-state-machine-v1.md)
+- [`docs/api/cirqua-service-rpc-contract-v1.md`](./api/cirqua-service-rpc-contract-v1.md)
 - [`docs/api/readdy-cirqua-ui-contract-v1.md`](./api/readdy-cirqua-ui-contract-v1.md)
 - [`docs/api/project-evaluation-flow-v1.md`](./api/project-evaluation-flow-v1.md)
 - [`docs/api/readdy-supabase-query-map-v1.md`](./api/readdy-supabase-query-map-v1.md)
@@ -36,4 +39,5 @@ This repository keeps collaboration-safe project documents under `docs/` so loca
 - `supabase/migrations/20260428101500_sample_role_assignment_staging.sql`
 - `supabase/migrations/20260428113000_add_cirqua_import_mvp_tables.sql`
 - `supabase/seed/20260428094500_roi_models_seed.sql`
+- `supabase/scripts/cirqua-import-mvp-smoke-test.sql`
 - `supabase/scripts/staging-rls-smoke-test.sql`
