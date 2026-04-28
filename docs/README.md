@@ -43,5 +43,6 @@ This repository keeps collaboration-safe project documents under `docs/` so loca
 - `supabase/migrations/20260428124500_implement_cirqua_import_rpc.sql`
 - `supabase/migrations/20260428133000_implement_cirqua_service_only_pipeline.sql`
 - `supabase/seed/20260428094500_roi_models_seed.sql`
+- `supabase/queries/20260428_sprint2g_business_tables_write_path_audit.sql`
 - `supabase/scripts/cirqua-import-mvp-smoke-test.sql`
 - `supabase/scripts/staging-rls-smoke-test.sql`
