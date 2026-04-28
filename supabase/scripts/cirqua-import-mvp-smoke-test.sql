@@ -1,7 +1,7 @@
 -- CIRQUA Import MVP smoke test
 -- Purpose:
--- Validate that the current MVP data layer is present and that the
--- future service-layer contract has a clear verification order.
+-- Validate that the current MVP data layer and implemented RPC layer
+-- are present and aligned with the staged service contract.
 --
 -- This script does not require real CIRQUA tokens and does not call
 -- external APIs. It is a contract-validation and schema-readiness script.
@@ -112,23 +112,73 @@ begin
 end
 $$;
 
--- 5. Service-layer RPC draft is not yet implemented, so verify expectation list only
+-- 5. Implemented RPC functions exist
+do $$
+declare
+  missing_count integer;
+begin
+  select count(*)
+  into missing_count
+  from (
+    values
+      ('create_cirqua_project_link'),
+      ('grant_cirqua_consent'),
+      ('create_cirqua_import_run'),
+      ('approve_cirqua_field_mapping'),
+      ('reject_cirqua_field_mapping'),
+      ('generate_project_evaluation_baseline_from_cirqua')
+  ) as required_functions(function_name)
+  where not exists (
+    select 1
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname = required_functions.function_name
+  );
+
+  if missing_count <> 0 then
+    raise exception 'Missing implemented CIRQUA RPC functions. Missing count: %', missing_count;
+  end if;
+end
+$$;
+
+-- 6. Service-only functions remain intentionally unimplemented
 select
-  'expected_service_entrypoint' as item_type,
+  'service_only_contract' as item_type,
   fn_name as item_name
 from (
   values
-    ('create_cirqua_project_link'),
-    ('grant_cirqua_consent'),
-    ('create_cirqua_import_run'),
     ('mark_cirqua_import_snapshot_received'),
-    ('propose_cirqua_field_mappings'),
-    ('approve_cirqua_field_mapping'),
-    ('reject_cirqua_field_mapping'),
-    ('generate_project_evaluation_baseline_from_cirqua')
+    ('propose_cirqua_field_mappings')
 ) as expected(fn_name);
 
--- 6. Recommended manual verification order once RPCs/Edge Functions exist
+-- 7. Authenticated direct DML on raw CIRQUA tables has been revoked
+do $$
+declare
+  unsafe_grant_count integer;
+begin
+  select count(*)
+  into unsafe_grant_count
+  from information_schema.role_table_grants g
+  where g.grantee = 'authenticated'
+    and g.table_schema = 'public'
+    and g.table_name in (
+      'project_source_links',
+      'external_import_runs',
+      'external_project_snapshots',
+      'external_budget_snapshots',
+      'external_import_field_mappings',
+      'external_import_audit_logs'
+    )
+    and g.privilege_type in ('INSERT', 'UPDATE', 'DELETE');
+
+  if unsafe_grant_count <> 0 then
+    raise exception 'Authenticated still has direct DML grants on CIRQUA raw tables. Count: %', unsafe_grant_count;
+  end if;
+end
+$$;
+
+-- 8. Manual verification order for implemented RPC layer
 select
   'manual_smoke_order' as item_type,
   step_name as item_name
@@ -137,56 +187,56 @@ from (
     ('create_cirqua_project_link'),
     ('grant_cirqua_consent'),
     ('create_cirqua_import_run'),
-    ('mark_cirqua_import_snapshot_received'),
-    ('propose_cirqua_field_mappings'),
+    ('service_only_snapshot_receive'),
+    ('service_only_mapping_proposal'),
     ('approve_or_reject_mappings'),
     ('generate_project_evaluation_baseline_from_cirqua')
 ) as steps(step_name);
 
 rollback;
 
--- Manual smoke test order after service implementation
--- ----------------------------------------------------
+-- Manual smoke test order after RPC implementation
+-- ------------------------------------------------
 -- 1. As super_admin:
 --    call create_cirqua_project_link(...)
 --    expect consent_status = 'pending'
---    audit event written
+--    expect audit event `create_project_link`
 --
 -- 2. As analyst:
 --    call create_cirqua_import_run(...) before consent
---    expect denial or consent_required result
+--    expect `consent_required`
+--    expect audit event `create_import_run`
 --
 -- 3. As super_admin:
 --    call grant_cirqua_consent(...)
 --    expect consent_status = 'granted'
---    audit event written
+--    expect audit event `grant_consent`
 --
 -- 4. As analyst:
 --    call create_cirqua_import_run(...)
---    expect status = ready_to_import
+--    expect status = `ready_to_import`
 --
--- 5. As backend service:
---    call mark_cirqua_import_snapshot_received(...)
---    expect project and budget snapshot rows created
---    import_status = imported
---    audit event written
+-- 5. As backend/service:
+--    perform snapshot insert flow through service-only contract
+--    expect run status moves to `imported`
+--    expect audit event `import_snapshot`
 --
--- 6. As backend service:
---    call propose_cirqua_field_mappings(...)
---    expect pending_review mappings created
---    import_status = mapping_required
+-- 6. As backend/service:
+--    perform mapping proposal flow
+--    expect run status moves to `mapping_required`
+--    expect pending mappings created
 --
 -- 7. As analyst:
---    approve or reject mappings
---    expect audit rows on each decision
---    run status becomes approved or rejected as appropriate
+--    call approve_cirqua_field_mapping(...) and/or reject_cirqua_field_mapping(...)
+--    expect audit event per decision
+--    expect run status becomes `approved` or `rejected`
 --
 -- 8. As shareholder_viewer:
---    attempt any CIRQUA service call
---    expect denial
+--    attempt any CIRQUA RPC
+--    expect authorization failure
 --
 -- 9. As analyst or super_admin:
 --    call generate_project_evaluation_baseline_from_cirqua(...)
---    only after approved status
---    expect new project_evaluations draft
---    expect audit event written
+--    only after `approved`
+--    expect new `project_evaluations` draft
+--    expect audit event `generate_baseline`
