@@ -1,16 +1,17 @@
 -- CIRQUA Stabilization Sprint 2A
 -- Draft only. Policy review skeleton, not for direct apply.
 --
--- Important blockers:
+-- Important blockers from the canonical 2026-04-28 baseline:
 -- - public.projects currently has no org_id column in staging.
 -- - public.user_profiles currently has no org_id column in staging.
+-- - public.organizations does not exist in staging.
 -- - the requested Sprint 1 audit artifacts were not present in GitHub main.
 --
 -- This file documents the intended RLS model and keeps high-risk statements
 -- commented until tenant columns and manual mapping are approved.
 
 select
-  'Sprint 2A draft only: RLS skeleton below is intentionally non-executable until tenant columns are introduced.' as draft_notice;
+  'Sprint 2A draft only: RLS skeleton remains intentionally non-executable until organizations, projects.org_id, and user_profiles.org_id are introduced and manually reconciled.' as draft_notice;
 
 -- ---------------------------------------------------------------------------
 -- Core 14-table hardening matrix
@@ -43,7 +44,7 @@ select *
 from table_matrix;
 
 -- ---------------------------------------------------------------------------
--- Suggested helper functions for Sprint 2B
+-- Suggested helper functions for Sprint 2B / 2C
 -- ---------------------------------------------------------------------------
 -- create schema if not exists app;
 --
@@ -62,6 +63,16 @@ from table_matrix;
 --   limit 1
 -- $$;
 --
+-- create or replace function app.user_has_org_scope()
+-- returns boolean
+-- language sql
+-- stable
+-- security definer
+-- set search_path = public
+-- as $$
+--   select app.current_org_id() is not null
+-- $$;
+--
 -- create or replace function app.can_access_project(p_project_id uuid)
 -- returns boolean
 -- language sql
@@ -73,6 +84,22 @@ from table_matrix;
 --     select 1
 --     from public.projects p
 --     where p.id = p_project_id
+--       and p.org_id = app.current_org_id()
+--   )
+-- $$;
+--
+-- create or replace function app.can_access_plan(p_plan_id uuid)
+-- returns boolean
+-- language sql
+-- stable
+-- security definer
+-- set search_path = public
+-- as $$
+--   select exists (
+--     select 1
+--     from public.plan_projects pp
+--     join public.projects p on p.id = pp.project_id
+--     where pp.plan_id = p_plan_id
 --       and p.org_id = app.current_org_id()
 --   )
 -- $$;
@@ -104,7 +131,8 @@ from table_matrix;
 -- Keep commented until:
 -- 1. user_profiles.org_id exists
 -- 2. projects.org_id exists
--- 3. manual backfill review is approved
+-- 3. organizations exists
+-- 4. manual backfill review is approved
 -- ---------------------------------------------------------------------------
 -- alter table public.user_profiles enable row level security;
 -- create policy "user_profiles_select_self_same_org_or_super_admin_v2"
@@ -183,3 +211,12 @@ from table_matrix;
 -- - public.investment_plans
 -- - public.plan_kpi_snapshots
 -- - public.plan_projects
+--
+-- Example plan-scoped skeleton once projects.org_id is backfilled:
+-- create policy "investment_plans_select_same_org_v2"
+--   on public.investment_plans
+--   for select
+--   using (
+--     app.has_role('super_admin')
+--     or app.can_access_plan(id)
+--   );
