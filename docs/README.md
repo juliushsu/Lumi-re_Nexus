@@ -2,6 +2,10 @@
 
 This repository keeps collaboration-safe project documents under `docs/` so local AI agents and teammates can reliably reference the latest pushed version.
 
+## Architecture
+
+- [`docs/architecture/cirqua-integration-architecture-v1.md`](./architecture/cirqua-integration-architecture-v1.md)
+
 ## Discovery
 
 - [`docs/discovery/supabase-discovery-2026-04-28.md`](./discovery/supabase-discovery-2026-04-28.md)
@@ -10,15 +14,18 @@ This repository keeps collaboration-safe project documents under `docs/` so loca
 
 - [`docs/security/rls-policy-v1.md`](./security/rls-policy-v1.md)
 - [`docs/security/rls-smoke-test-checklist-v1.md`](./security/rls-smoke-test-checklist-v1.md)
+- [`docs/security/cirqua-data-consent-and-access-control-v1.md`](./security/cirqua-data-consent-and-access-control-v1.md)
 
 ## Data
 
 - [`docs/data/roi-model-schema-v1.md`](./data/roi-model-schema-v1.md)
+- [`docs/data/cirqua-to-film-investment-mapping-v1.md`](./data/cirqua-to-film-investment-mapping-v1.md)
 
 ## API
 
 - [`docs/api/project-evaluation-flow-v1.md`](./api/project-evaluation-flow-v1.md)
 - [`docs/api/readdy-supabase-query-map-v1.md`](./api/readdy-supabase-query-map-v1.md)
+- [`docs/api/cirqua-import-contract-v1.md`](./api/cirqua-import-contract-v1.md)
 
 ## Supabase SQL Assets
 
