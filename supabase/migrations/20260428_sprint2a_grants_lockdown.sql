@@ -1,0 +1,105 @@
+-- CIRQUA Stabilization Sprint 2A
+-- Draft only. Grants lockdown review plan.
+--
+-- Goal:
+-- - remove accidental direct table exposure
+-- - preserve front-end continuity by introducing replacement RPC/view paths first
+-- - distinguish anon / authenticated / service_role clearly
+
+select
+  'Sprint 2A draft only: revoke statements are intentionally commented until replacement API paths are confirmed.' as draft_notice;
+
+-- ---------------------------------------------------------------------------
+-- 1. Current risk areas observed in staging
+-- ---------------------------------------------------------------------------
+-- As of the read-only staging probe on 2026-04-28:
+-- - anon still has direct table privileges on:
+--   - public.festival_events
+--   - public.plan_kpi_snapshots
+--   - public.plan_projects
+--   - public.project_cast_costs
+--   - public.project_cost_items
+--   - public.project_costs
+--   - public.project_festival_records
+--   - public.project_revenues
+-- - historical Sprint 1 risk mentions for public.profiles / public.get_org_usage
+--   could not be reproduced in current staging:
+--   - public.profiles does not exist
+--   - public.get_org_usage does not exist
+
+-- ---------------------------------------------------------------------------
+-- 2. Revoke plan by phase
+-- ---------------------------------------------------------------------------
+-- Phase A: inventory and shadow path
+-- - keep existing grants while replacement RPC/view paths are prepared
+-- - capture exact frontend dependencies before revoking anything
+--
+-- Phase B: tenant columns + RLS
+-- - add tenant columns
+-- - backfill only after manual review
+-- - enable parent-scoped RLS on high-risk tables
+--
+-- Phase C: revoke direct grants
+-- - revoke anon direct table access
+-- - keep service_role operational
+-- - narrow authenticated to approved RLS-protected tables only
+
+-- ---------------------------------------------------------------------------
+-- 3. Draft revoke statements
+-- Keep commented until replacement paths are live.
+-- ---------------------------------------------------------------------------
+-- revoke all on table public.festival_events from anon;
+-- revoke all on table public.plan_kpi_snapshots from anon;
+-- revoke all on table public.plan_projects from anon;
+-- revoke all on table public.project_cast_costs from anon;
+-- revoke all on table public.project_cost_items from anon;
+-- revoke all on table public.project_costs from anon;
+-- revoke all on table public.project_festival_records from anon;
+-- revoke all on table public.project_revenues from anon;
+--
+-- revoke all on function public.get_org_usage(...) from anon;
+-- revoke all on function public.get_org_usage(...) from authenticated;
+-- Note: current staging does not expose this function, so the exact signature
+-- must be recovered from Sprint 1 artifacts before any revoke is finalized.
+
+-- ---------------------------------------------------------------------------
+-- 4. Replacement API / RPC path draft
+-- ---------------------------------------------------------------------------
+-- Prefer stable, least-privilege service entrypoints instead of direct table access.
+--
+-- Existing safe-ish paths already in repo:
+-- - public.get_projects_dashboard_summary()
+-- - public.get_investment_plans_dashboard_summary()
+-- - public.get_reports_dashboard_summary()
+--
+-- Candidate replacement paths for Sprint 2B / 2C:
+-- - public.get_public_festival_events()
+--   returns reference taxonomy only
+-- - public.get_plan_overview(p_plan_id uuid)
+--   returns org-filtered plan summary
+-- - public.get_project_cost_summary(p_project_id uuid)
+--   returns project-scoped financial summary only
+-- - public.get_project_revenue_summary(p_project_id uuid)
+--   returns project-scoped revenue summary only
+-- - public.get_project_festival_summary(p_project_id uuid)
+--   returns project-scoped festival summary only
+--
+-- Frontend compatibility strategy:
+-- - first migrate UI to RPC/view calls
+-- - then revoke anon direct table grants
+-- - do not leave Readdy or public clients depending on raw table reads
+
+-- ---------------------------------------------------------------------------
+-- 5. Role intent by actor class
+-- ---------------------------------------------------------------------------
+-- anon
+-- - should have no direct access to tenant or project financial tables
+-- - if needed, only curated public-read reference RPCs
+--
+-- authenticated
+-- - should access tenant data only through RLS-protected tables or RPCs
+-- - self-service profile lookup remains acceptable
+--
+-- service_role
+-- - retains operational access for backend jobs, imports, and admin maintenance
+-- - must not be exposed in frontend clients
